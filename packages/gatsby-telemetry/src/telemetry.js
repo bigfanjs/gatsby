@@ -8,24 +8,39 @@ const { basename, join, sep } = require(`path`)
 const { execSync } = require(`child_process`)
 const isDocker = require(`is-docker`)
 const showAnalyticsNotification = require(`./showAnalyticsNotification`)
+const lodash = require(`lodash`)
 
 module.exports = class AnalyticsTracker {
   store = new EventStorage()
   debouncer = {}
   metadataCache = {}
+  permanentMetadataCache = {}
   defaultTags = {}
   osInfo // lazy
   trackingEnabled // lazy
   componentVersion
   sessionId = uuid()
+
   constructor() {
     try {
       this.componentVersion = require(`../package.json`).version
       this.installedGatsbyVersion = this.getGatsbyVersion()
       this.gatsbyCliVersion = this.getGatsbyCliVersion()
+      this.defaultTags = this.getTagsFromEnv()
     } catch (e) {
       // ignore
     }
+  }
+
+  getTagsFromEnv() {
+    if (process.env.GATSBY_TELEMETRY_TAGS) {
+      try {
+        return JSON.parse(process.env.GATSBY_TELEMETRY_TAGS)
+      } catch (_) {
+        // ignore
+      }
+    }
+    return {}
   }
 
   getGatsbyVersion() {
@@ -72,8 +87,12 @@ module.exports = class AnalyticsTracker {
 
     const decoration = this.metadataCache[type]
     delete this.metadataCache[type]
+    const permanetDecoration = this.permanentMetadataCache[type]
     const eventType = `${baseEventType}_${type}`
-    this.buildAndStoreEvent(eventType, Object.assign(tags, decoration))
+    this.buildAndStoreEvent(
+      eventType,
+      lodash.merge({}, tags, decoration, permanetDecoration)
+    )
   }
 
   captureError(type, tags = {}) {
@@ -82,6 +101,7 @@ module.exports = class AnalyticsTracker {
     }
     const decoration = this.metadataCache[type]
     delete this.metadataCache[type]
+    const permanetDecoration = this.permanentMetadataCache[type]
     const eventType = `CLI_ERROR_${type}`
 
     if (tags.error) {
@@ -89,7 +109,10 @@ module.exports = class AnalyticsTracker {
       tags.error = sanitizeErrors(tags.error)
     }
 
-    this.buildAndStoreEvent(eventType, Object.assign(tags, decoration))
+    this.buildAndStoreEvent(
+      eventType,
+      lodash.merge({}, tags, decoration, permanetDecoration)
+    )
   }
 
   captureBuildError(type, tags = {}) {
@@ -98,6 +121,7 @@ module.exports = class AnalyticsTracker {
     }
     const decoration = this.metadataCache[type]
     delete this.metadataCache[type]
+    const permanetDecoration = this.permanentMetadataCache[type]
     const eventType = `BUILD_ERROR_${type}`
 
     if (tags.error) {
@@ -105,15 +129,17 @@ module.exports = class AnalyticsTracker {
       tags.error = sanitizeErrors(tags.error)
     }
 
-    this.buildAndStoreEvent(eventType, Object.assign(tags, decoration))
+    this.buildAndStoreEvent(
+      eventType,
+      lodash.merge({}, tags, decoration, permanetDecoration)
+    )
   }
 
   buildAndStoreEvent(eventType, tags) {
     const event = {
       installedGatsbyVersion: this.installedGatsbyVersion,
       gatsbyCliVersion: this.gatsbyCliVersion,
-      ...this.defaultTags,
-      ...tags, // The schema must include these
+      ...lodash.merge({}, this.defaultTags, tags), // The schema must include these
       eventType,
       sessionId: this.sessionId,
       time: new Date(),
@@ -213,6 +239,11 @@ module.exports = class AnalyticsTracker {
   decorateNextEvent(event, obj) {
     const cached = this.metadataCache[event] || {}
     this.metadataCache[event] = Object.assign(cached, obj)
+  }
+
+  decorateAllEvents(event, obj) {
+    const cached = this.permanentMetadataCache[event] || {}
+    this.permanentMetadataCache[event] = Object.assign(cached, obj)
   }
 
   decorateAll(tags) {

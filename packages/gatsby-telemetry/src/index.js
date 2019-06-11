@@ -21,6 +21,7 @@ module.exports = {
   trackBuildError: (input, tags) => instance.captureBuildError(input, tags),
   setDefaultTags: tags => instance.decorateAll(tags),
   decorateEvent: (event, tags) => instance.decorateNextEvent(event, tags),
+  decorateAllEvents: (event, tags) => instance.decorateAllEvents(event, tags),
   setTelemetryEnabled: enabled => instance.setTelemetryEnabled(enabled),
   startBackgroundUpdate: _ => {
     setTimeout(tick, interval)
